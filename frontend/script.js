@@ -630,6 +630,42 @@ function initAdminPage() {
 
     refreshButton.addEventListener("click", () => loadStudents());
 
+    const importCsvButton = document.getElementById("importCsvButton");
+    const importCsvInput = document.getElementById("importCsvInput");
+
+    importCsvButton?.addEventListener("click", () => importCsvInput.click());
+
+    importCsvInput?.addEventListener("change", async () => {
+        const file = importCsvInput.files[0];
+        if (!file) return;
+
+        importCsvInput.value = "";
+        importCsvButton.disabled = true;
+        importCsvButton.textContent = "Importing...";
+        setMessage(message, "Importing students from CSV...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const data = await parseJsonResponse(
+                await fetch("/import", { method: "POST", body: formData })
+            );
+
+            const summary = `Imported ${data.imported} student(s), skipped ${data.skipped}.`;
+            const detail = data.errors.length
+                ? ` Issues: ${data.errors.join(" | ")}`
+                : "";
+            setMessage(message, summary + detail, data.imported > 0 ? "success" : "error");
+            await loadStudents();
+        } catch (error) {
+            setMessage(message, error.message, "error");
+        } finally {
+            importCsvButton.disabled = false;
+            importCsvButton.textContent = "Import CSV";
+        }
+    });
+
     downloadCsvButton?.addEventListener("click", () => {
         const link = document.createElement("a");
         link.href = "/export";
