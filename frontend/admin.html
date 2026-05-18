@@ -6,6 +6,38 @@
     <title>Admin Dashboard</title>
     <link rel="icon" type="image/png" href="/static/logo.png">
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .stats-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .stats-row .stat-card {
+            flex: 1 1 0;
+            min-width: 120px;
+        }
+        .dashboard-toolbar--compact {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .dashboard-toolbar--compact #searchRoll {
+            flex: 1 1 160px;
+            min-width: 120px;
+            padding: 0.45rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid var(--border, #e2e8f0);
+            font-size: 0.9rem;
+            background: var(--input-bg, #fff);
+            color: inherit;
+        }
+        .dashboard-toolbar--compact .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: nowrap;
+        }
+    </style>
 </head>
 <body data-page="admin" class="protected-page admin-page">
     <div id="loginOverlay" class="auth-overlay" style="display: none;">
@@ -41,7 +73,7 @@
             </header>
 
             <main class="dashboard-grid dashboard">
-                <section class="stats-grid stats-cards fade-up">
+                <section class="stats-row fade-up">
                     <article class="glass-panel stat-card card">
                         <span>Total Students</span>
                         <strong id="statTotal">0</strong>
@@ -73,11 +105,8 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-toolbar">
-                        <label class="input-group input-group--search">
-                            <span>Search by Roll Number</span>
-                            <input id="searchRoll" type="text" placeholder="Type roll number" pattern="[0-9]+" inputmode="numeric" maxlength="15" >
-                        </label>
+                    <div class="dashboard-toolbar dashboard-toolbar--compact">
+                        <input id="searchRoll" type="text" placeholder="Search by roll number" pattern="[0-9]+" inputmode="numeric" maxlength="15">
                         <div class="filter-group" aria-label="Student status filter">
                             <button type="button" class="filter-chip active" data-filter="all">All</button>
                             <button type="button" class="filter-chip" data-filter="used">Used</button>
