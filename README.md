@@ -99,3 +99,6 @@ https://your-app-name.onrender.com/health
 7. Save the monitor
 
 UptimeRobot will now automatically ping your Render app to help keep it awake.
+
+# Working URL of project :-
+https://qr-tazp.onrender.com
