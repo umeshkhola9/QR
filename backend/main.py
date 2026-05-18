@@ -7,7 +7,7 @@ from typing import List
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -112,6 +112,100 @@ def get_config():
 def get_qr(token: str) -> StreamingResponse:
     qr_buffer = generate_qr_image(token)
     return StreamingResponse(qr_buffer, media_type="image/png")
+
+
+@app.post("/import")
+async def import_students(file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict:
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only CSV files are supported.",
+        )
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File encoding is not supported. Please save the CSV as UTF-8.",
+        )
+
+    reader = csv.DictReader(io.StringIO(text))
+    required_columns = {"name", "roll_no", "course", "contact", "is_used", "created_at", "entry_at", "token"}
+    actual_columns = set(reader.fieldnames or [])
+    if not required_columns.issubset(actual_columns):
+        missing = required_columns - actual_columns
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"CSV is missing columns: {', '.join(sorted(missing))}. "
+                   f"Please use the file downloaded from the admin dashboard.",
+        )
+
+    def parse_dt(value: str):
+        value = (value or "").strip()
+        if not value:
+            return None
+        for fmt in ("%d/%m/%Y, %I:%M:%S %p", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+        return None
+
+    imported, skipped, errors = 0, 0, []
+
+    for i, row in enumerate(reader, start=2):
+        name = (row.get("name") or "").strip()
+        roll_no = (row.get("roll_no") or "").strip()
+        course = (row.get("course") or "").strip()
+        contact = (row.get("contact") or "").strip()
+
+        if not all([name, roll_no, course, contact]):
+            errors.append(f"Row {i}: missing required field(s), skipped.")
+            skipped += 1
+            continue
+
+        if db.execute(select(Student).where(Student.roll_no == roll_no)).scalar_one_or_none():
+            errors.append(f"Row {i}: roll number '{roll_no}' already exists, skipped.")
+            skipped += 1
+            continue
+
+        is_used = (row.get("is_used") or "").strip().lower() in ("true", "1", "yes")
+        created_at = parse_dt(row.get("created_at")) or datetime.now()
+        entry_at = parse_dt(row.get("entry_at")) if is_used else None
+
+        token = (row.get("token") or "").strip()
+        if not token:
+            token = generate_token()
+            while db.execute(select(Student).where(Student.token == token)).scalar_one_or_none():
+                token = generate_token()
+        elif db.execute(select(Student).where(Student.token == token)).scalar_one_or_none():
+            errors.append(f"Row {i}: token already exists for roll number '{roll_no}', skipped.")
+            skipped += 1
+            continue
+
+        try:
+            db.add(Student(
+                name=name,
+                roll_no=roll_no,
+                course=course,
+                contact=contact,
+                token=token,
+                is_used=is_used,
+                created_at=created_at,
+                entry_at=entry_at,
+            ))
+            db.flush()
+            imported += 1
+        except IntegrityError:
+            db.rollback()
+            errors.append(f"Row {i}: duplicate entry for roll number '{roll_no}', skipped.")
+            skipped += 1
+
+    db.commit()
+
+    return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
 @app.post("/register", response_model=RegisterStudentResponse, status_code=status.HTTP_201_CREATED)
@@ -251,10 +345,10 @@ def export_students(db: Session = Depends(get_db)) -> StreamingResponse:
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["name", "roll_no", "course", "contact", "is_used", "created_at", "entry_at"])
+    writer.writerow(["name", "roll_no", "course", "contact", "is_used", "created_at", "entry_at", "token"])
 
     for s in students:
-        writer.writerow([s.name, s.roll_no, s.course, s.contact, s.is_used, fmt(s.created_at), fmt(s.entry_at)])
+        writer.writerow([s.name, s.roll_no, s.course, s.contact, s.is_used, fmt(s.created_at), fmt(s.entry_at), s.token])
 
     headers = {"Content-Disposition": 'attachment; filename="students_export.csv"'}
     return StreamingResponse(iter([buffer.getvalue()]), media_type="text/csv", headers=headers)
